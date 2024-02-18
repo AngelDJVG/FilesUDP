@@ -1,51 +1,28 @@
 package org.itson.servidorarchivos;
 
-
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
-import java.nio.file.*;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 public class ServidorArchivos {
 
     private static final int MAX_CHUNK_SIZE = 1024;
-
+    private static final int MAXIMO_HILOS = 10;
+    private static final int PUERTO = 7;
+    
     public static void main(String[] args) throws IOException {
-        int servPort = 7;
-        
-        DatagramSocket datagramSocket = new DatagramSocket(servPort);
-
-        byte[] datosRecibidos = new byte[MAX_CHUNK_SIZE * 10];
-
+        Executor service = Executors.newFixedThreadPool(MAXIMO_HILOS);
+        DatagramSocket datagramSocket = new DatagramSocket(PUERTO);
+        System.out.println("Ya estoy escuchando");
         while (true) {
-            
-            DatagramPacket paquete = new DatagramPacket(datosRecibidos, datosRecibidos.length);
-            datagramSocket.receive(paquete);
-
-            int tamanio = paquete.getLength();
-            byte[] chunk = new byte[tamanio];
-            System.arraycopy(datosRecibidos, 0, chunk, 0, tamanio);
-
-            Path directorioSalida = Paths.get("C:\\Users\\angel\\Downloads\\Nueva carpeta");
-            Path rutaSalida = directorioSalida.resolve("ArchivoRecibido.rar");
-
-            if (!Files.exists(directorioSalida)) {
-                Files.createDirectories(directorioSalida);
-            }
-
-            if (!Files.exists(rutaSalida)) {
-                Files.createFile(rutaSalida);
-            }
-
-            Files.write(rutaSalida, chunk, StandardOpenOption.APPEND);
-
-            System.out.println("Se ha recibido un chunk del cliente en " + paquete.getAddress().getHostName() + " en el puerto " + paquete.getPort());
-            
-            //el receptor del mensaje envía un "OK" (ACK) al remitente para decirle que recibió esos paquetes correctamente. 
-            //Si el remitente no recibe el "OK", puede intentar enviar los paquetes nuevamente para asegurarse de que el 
-            //mensaje se entregue de manera correcta.
-            DatagramPacket acknowledgmentPacket = new DatagramPacket("ACK".getBytes(), 3, paquete.getAddress(), paquete.getPort());
-            datagramSocket.send(acknowledgmentPacket);
+            byte[] datosRecibidos = new byte[MAX_CHUNK_SIZE];
+            DatagramPacket paqueteRecibido = new DatagramPacket(datosRecibidos, datosRecibidos.length);
+            datagramSocket.receive(paqueteRecibido);
+            char solicitudRecibida = new String(datosRecibidos).charAt(0);
+            service.execute(new ClientManager(paqueteRecibido, solicitudRecibida));
+            System.out.println("Entro un cliente");
         }
     }
 }

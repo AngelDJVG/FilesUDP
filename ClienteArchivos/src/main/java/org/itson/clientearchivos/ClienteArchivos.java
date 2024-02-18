@@ -7,56 +7,81 @@ import java.net.InetAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
+import java.util.Scanner;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class ClienteArchivos {
 
+    private static final int MAX_CHUNK_SIZE = 1024;
+    private static final int PUERTO = 7;
     private static final int TIMEOUT = 3000;
-    private static final int MAX_CHUNK_SIZE = 1024; 
-    private static final int MAXTRIES = 5;
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) {
+        try {
+            Scanner tec = new Scanner(System.in);
+            
+            String archivoSolicitado;
+            do{
+            System.out.println("Ingrese el archivo que quiere pedir: ");
+            System.out.println("1 Trolleada al gabriel");
+            System.out.println("2 Masacre en medio de la multitud");
+            System.out.println("3 Nunca confies en los demas");
+            
+            archivoSolicitado = tec.nextLine();
+            }while(!(archivoSolicitado.length() == 1 &&(archivoSolicitado.charAt(0)=='1'|| archivoSolicitado.charAt(0)=='2'|| archivoSolicitado.charAt(0)=='3')));
+            
+            solicitarArchivo(archivoSolicitado);
+        } catch (IOException ex) {
+            Logger.getLogger(ClienteArchivos.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+
+    private static void solicitarArchivo(String archivoSolicitado) throws IOException {
         InetAddress direccionServidor = InetAddress.getByName("localhost");
-        int servPort = 7;
-
-        Path rutaArchivo = Paths.get("C:\\Users\\angel\\Videos\\Captures.rar");
-        byte[] bytesArchivo = Files.readAllBytes(rutaArchivo);
 
         DatagramSocket datagramSocket = new DatagramSocket();
-        datagramSocket.setSoTimeout(TIMEOUT);
+        DatagramPacket paqueteEnvio = new DatagramPacket(archivoSolicitado.getBytes(), 1, direccionServidor, PUERTO);
+        datagramSocket.send(paqueteEnvio);
 
-        int totalChunks = (int) Math.ceil((double) bytesArchivo.length / MAX_CHUNK_SIZE);
+        byte[] datosRecibidos = new byte[MAX_CHUNK_SIZE * 10];
 
-        for (int chunkNumber = 0; chunkNumber < totalChunks; chunkNumber++) {
-            int offset = chunkNumber * MAX_CHUNK_SIZE;
-            int length = Math.min(MAX_CHUNK_SIZE, bytesArchivo.length - offset);
-            byte[] chunk = new byte[length];
+        while (true) {
+            Arrays.fill(datosRecibidos, (byte) 0);
             
-            // Copia de los bytes correspondientes al fragmento actual
-            System.arraycopy(bytesArchivo, offset, chunk, 0, length);
+            DatagramPacket paquete = new DatagramPacket(datosRecibidos, datosRecibidos.length);
+            datagramSocket.receive(paquete);
 
-            DatagramPacket paqueteEnvio = new DatagramPacket(chunk, length, direccionServidor, servPort);
+            int tamanio = paquete.getLength();
 
-            int tries = 0;
-            boolean respuestaRecibida = false;
+            byte[] chunk = new byte[tamanio];
+            System.arraycopy(datosRecibidos, 0, chunk, 0, tamanio);
 
-            do {
-                datagramSocket.send(paqueteEnvio);
-                try {
-                    byte[] datosRecibidos = new byte[MAX_CHUNK_SIZE];
-                    DatagramPacket paqueteRecibido = new DatagramPacket(datosRecibidos, datosRecibidos.length);
-                    datagramSocket.receive(paqueteRecibido);
+            Path directorioSalida = Paths.get("C:\\Users\\mario\\3D Objects\\ArchivosRecibidos\\Archivos");
+            Path rutaSalida = directorioSalida.resolve("ArchivoRecibido3.rar");
 
-                    if (!paqueteRecibido.getAddress().equals(direccionServidor)) {
-                        throw new IOException("Received packet from an unknown source");
-                    }
-                    respuestaRecibida = true;
-                } catch (IOException e) {
-                    tries += 1;
-                    System.out.println("Timed out, " + (MAXTRIES - tries) + " more tries...");
-                }
-            } while ((!respuestaRecibida) && (tries < MAXTRIES));
+            if (!Files.exists(directorioSalida)) {
+                Files.createDirectories(directorioSalida);
+            }
+
+            if (!Files.exists(rutaSalida)) {
+                Files.createFile(rutaSalida);
+            }
+
+            Files.write(rutaSalida, chunk, StandardOpenOption.APPEND);
+
+            System.out.println("Se ha recibido un chunk del cliente en " + paquete.getAddress().getHostName() + " en el puerto " + paquete.getPort());
+
+            DatagramPacket acknowledgmentPacket = new DatagramPacket("k".getBytes(), 1, paquete.getAddress(), paquete.getPort());
+            datagramSocket.send(acknowledgmentPacket);
+
+            if (tamanio != 1024) {
+                System.out.println("Fin del archivo");
+                break;
+            }
         }
-
-        datagramSocket.close();
     }
+
 }
