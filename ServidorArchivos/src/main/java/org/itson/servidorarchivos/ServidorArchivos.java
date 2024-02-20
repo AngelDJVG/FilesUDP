@@ -8,7 +8,7 @@ import java.util.concurrent.Executors;
 
 public class ServidorArchivos {
 
-    private static final int MAX_CHUNK_SIZE = 1024;
+    private static final int TAMANIO_PAQUETE = 1024;
     private static final int MAXIMO_HILOS = 10;
     private static final int PUERTO = 7;
     
@@ -17,7 +17,7 @@ public class ServidorArchivos {
         DatagramSocket datagramSocket = new DatagramSocket(PUERTO);
         System.out.println("Ya estoy escuchando");
         while (true) {
-            byte[] datosRecibidos = new byte[MAX_CHUNK_SIZE];
+            byte[] datosRecibidos = new byte[TAMANIO_PAQUETE];
             DatagramPacket paqueteRecibido = new DatagramPacket(datosRecibidos, datosRecibidos.length);
             datagramSocket.receive(paqueteRecibido);
             char solicitudRecibida = new String(datosRecibidos).charAt(0);
