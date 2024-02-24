@@ -8,14 +8,15 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
 public class ClientManager implements Runnable {
 
-    private static final int DELAY = 3000;
-    private static final int TAMANIO_PAQUETE = 1024;
+    private static final int DELAY = 4000;
+    private static final int TAMANIO_PAQUETE = 1016;
     private DatagramPacket paqueteRecibido;
     private InetAddress direccionCliente;
 
@@ -46,44 +47,26 @@ public class ClientManager implements Runnable {
             for (int numeroChunk = 0; numeroChunk < totalChunks; numeroChunk++) {
                 int offset = numeroChunk * TAMANIO_PAQUETE;
                 int tamanio = Math.min(TAMANIO_PAQUETE, bytesArchivo.length - offset);
-                byte[] chunk = new byte[tamanio];
+                byte[] chunk = new byte[tamanio + 8];
 
                 System.arraycopy(bytesArchivo, offset, chunk, 0, tamanio);
 
-                DatagramPacket paqueteEnvio = new DatagramPacket(chunk, tamanio, direccionCliente, paqueteRecibido.getPort());
+                ByteBuffer.wrap(chunk, tamanio, 4).putInt(numeroChunk);
+
+                ByteBuffer.wrap(chunk, tamanio + 4, 4).putInt(totalChunks);
+
+                DatagramPacket paqueteEnvio = new DatagramPacket(chunk, tamanio + 8, direccionCliente, paqueteRecibido.getPort());
 
                 boolean respuestaRecibida = false;
 
-                do {
-                    datagramSocket.send(paqueteEnvio);
-                    try {
-                        byte[] datosRecibidos = new byte[TAMANIO_PAQUETE];
-                        DatagramPacket paqueteRecibido = new DatagramPacket(datosRecibidos, datosRecibidos.length);
-                        datagramSocket.receive(paqueteRecibido);
-
-                        if (!paqueteRecibido.getAddress().equals(direccionCliente)) {
-                            throw new IOException("Se recibio un paquete de otro lugar");
-                        }
-
-                        char caracterRecibido = new String(datosRecibidos).charAt(0);
-
-                        if (caracterRecibido == 'k') {
-                            respuestaRecibida = true;
-                        } else {
-                            System.out.println("No confirmo de recibido");
-                        }
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                        System.out.println("Error al enviar un paquete, se reintentará su entrega");
-                    }
-                } while (!respuestaRecibida);
+                datagramSocket.send(paqueteEnvio);
             }
             datagramSocket.close();
         } catch (IOException e) {
             System.out.println("Error al inicializar valores");
         }
     }
-    
+
     private String obtenerArchivoSolicitado() {
         switch (solicitudRecibida) {
             case '1':
