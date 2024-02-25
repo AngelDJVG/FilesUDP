@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
 
 public class ClientManager implements Runnable {
 
-    private static final int DELAY = 4000;
+    private static final int DELAY = 2000;
     private static final int TAMANIO_PAQUETE = 1016;
     private DatagramPacket paqueteRecibido;
     private InetAddress direccionCliente;
@@ -52,40 +52,54 @@ public class ClientManager implements Runnable {
 
             int totalChunks = (int) Math.ceil((double) bytesArchivo.length / TAMANIO_PAQUETE);
 
-            for (int numeroChunk = 0; numeroChunk < totalChunks; numeroChunk++) {
-                enviarPaquete(numeroChunk, bytesArchivo, totalChunks, datagramSocket);
+            int numeroTandas = 64;
+            if(totalChunks < 64){
+                numeroTandas = totalChunks;
             }
+            int chunksPorTanda = (int) Math.ceil((double) totalChunks / numeroTandas);
+            
+            int tandaAuxiliar = -1;
+            int ultimosChunks = -1;
+            for (int tanda = 0; tanda < numeroTandas && tandaAuxiliar == -1; tanda++) {
+                int limiteChunksPorTanda = (tanda+1)* chunksPorTanda; 
+                ultimosChunks = chunksPorTanda; 
+                if(totalChunks-(tanda*chunksPorTanda)<=chunksPorTanda){       
+                    tandaAuxiliar = 0;
+                    limiteChunksPorTanda = totalChunks;         
+                    ultimosChunks = totalChunks-(tanda*chunksPorTanda); 
+                }               
+                for (int numeroChunk = tanda * chunksPorTanda; numeroChunk < limiteChunksPorTanda; numeroChunk++) {
+                    enviarPaquete(numeroChunk, bytesArchivo, ultimosChunks, datagramSocket);
+                }
 
-            List<Integer> paquetesRecibidosCliente = new ArrayList<>();
-            try {
-                do {
-                    byte[] confirmacionPaquetesRecibidos = new byte[totalChunks * 4];
-                    paqueteRecibido = new DatagramPacket(confirmacionPaquetesRecibidos, confirmacionPaquetesRecibidos.length);
-                    paqueteRecibido.getLength();
-                    datagramSocket.receive(paqueteRecibido);
+                List<Integer> paquetesRecibidosCliente = new ArrayList<>();
+                try {
+                    do {
+                        byte[] confirmacionPaquetesRecibidos = new byte[totalChunks * 4];
+                        paqueteRecibido = new DatagramPacket(confirmacionPaquetesRecibidos, confirmacionPaquetesRecibidos.length);
+                        paqueteRecibido.getLength();
+                        datagramSocket.receive(paqueteRecibido);
 
-                    int tamanioLista = paqueteRecibido.getLength();
-                    byte[] enterosRecibidos = new byte[tamanioLista];
+                        int tamanioLista = paqueteRecibido.getLength();
+                        byte[] enterosRecibidos = new byte[tamanioLista];
 
-                    System.arraycopy(confirmacionPaquetesRecibidos, 0, enterosRecibidos, 0, tamanioLista);
+                        System.arraycopy(confirmacionPaquetesRecibidos, 0, enterosRecibidos, 0, tamanioLista);
 
-                    paquetesRecibidosCliente = convertirArregloEnteros(enterosRecibidos);
-                    System.out.println("2Paquetes recibidos " + paquetesRecibidosCliente.size() + " Totales que deben ser: " + totalChunks);
-                    if (paquetesRecibidosCliente.size() != totalChunks) {
-                        for (int numeroChunk = 0; numeroChunk < totalChunks; numeroChunk++) {
-                            if (!paquetesRecibidosCliente.contains(numeroChunk)) {
-                                enviarPaquete(numeroChunk, bytesArchivo, totalChunks, datagramSocket);
+                        paquetesRecibidosCliente = convertirArregloEnteros(enterosRecibidos);
+                        if (paquetesRecibidosCliente.size() != ultimosChunks) {
+                            for (int numeroChunk = tanda * chunksPorTanda; numeroChunk < limiteChunksPorTanda; numeroChunk++) {
+                                if (!paquetesRecibidosCliente.contains(numeroChunk)) {
+                                    enviarPaquete(numeroChunk, bytesArchivo, ultimosChunks, datagramSocket);
+                                }
                             }
                         }
-                    }
-                } while (paquetesRecibidosCliente.size() != totalChunks);
-            } catch (IOException e) {
-                e.printStackTrace();
-                System.out.println("3Paquetes recibidos " + paquetesRecibidosCliente.size() + " Totales que deben ser: " + totalChunks);
+                    } while (paquetesRecibidosCliente.size() != ultimosChunks);
+                } catch (IOException e) {
+                    
+                }
             }
             datagramSocket.close();
         } catch (IOException e) {
-            e.printStackTrace();
             System.out.println("Error al inicializar valores");
         }
     }
@@ -102,8 +116,9 @@ public class ClientManager implements Runnable {
 
         try {
             datagramSocket.send(paqueteEnvio);
+            System.out.println("Se envio el paquete "+numeroChunk);
         } catch (IOException ex) {
-
+            
         }
     }
 

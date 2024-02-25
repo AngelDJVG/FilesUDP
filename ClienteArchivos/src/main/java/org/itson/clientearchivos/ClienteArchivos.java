@@ -40,7 +40,7 @@ public class ClienteArchivos {
         try {
             solicitarArchivo(archivoSeleccionado);
         } catch (Exception ex) {
-            ex.printStackTrace();
+            
         }
     }
 
@@ -63,49 +63,54 @@ public class ClienteArchivos {
         RandomAccessFile raf = new RandomAccessFile(cadenaDirectorioSalida + "\\" + cadenaRutaSalida, "rw");
         ArrayList<Integer> paquetesRecibidos = new ArrayList<>();
         DatagramSocket datagramSocket = new DatagramSocket();
-        try {
-            InetAddress direccionServidor = InetAddress.getByName(DIRECCION_SERVIDOR);
-            datagramSocket.setSoTimeout(DELAY);
-            DatagramPacket paqueteEnvio = new DatagramPacket(archivoSolicitado.getBytes(), 1, direccionServidor, PUERTO);
-            datagramSocket.send(paqueteEnvio);
+        InetAddress direccionServidor = InetAddress.getByName(DIRECCION_SERVIDOR);
+        datagramSocket.setSoTimeout(DELAY);
+        DatagramPacket paqueteEnvio = new DatagramPacket(archivoSolicitado.getBytes(), 1, direccionServidor, PUERTO);
+        datagramSocket.send(paqueteEnvio);
 
-            Path directorioSalida = Paths.get(cadenaDirectorioSalida);
-            Path rutaSalida = directorioSalida.resolve(cadenaRutaSalida);
+        Path directorioSalida = Paths.get(cadenaDirectorioSalida);
+        Path rutaSalida = directorioSalida.resolve(cadenaRutaSalida);
 
-            if (!Files.exists(directorioSalida)) {
-                Files.createDirectories(directorioSalida);
-            }
-
-            if (!Files.exists(rutaSalida)) {
-                Files.createFile(rutaSalida);
-            }
-
-            boolean CONTINUA_RECIBIENDO = true;
-            while (CONTINUA_RECIBIENDO) {
-                recibirArchivo(datagramSocket, raf, paquetesRecibidos);
-            }
-            raf.close();
-        } catch (IOException ex) {
-            ex.printStackTrace();
+        if (!Files.exists(directorioSalida)) {
+            Files.createDirectories(directorioSalida);
         }
-        System.out.println("Recibio " + paquetesRecibidos.size());
 
-        do {
-            byte[] paquetesRecibidosEnviar = convertirArregloBytes(paquetesRecibidos);
-            DatagramPacket acknowledgmentPacket = new DatagramPacket(paquetesRecibidosEnviar, paquetesRecibidosEnviar.length, direccionRemitente, puertoRemitente);
-            System.out.println("Paquetes recibidos " + paquetesRecibidos.size());
-            datagramSocket.send(acknowledgmentPacket);
-            if (paquetesRecibidos.size() != numeroPaquetesRecibidos) {
+        if (!Files.exists(rutaSalida)) {
+            Files.createFile(rutaSalida);
+        }
+
+        int tandaRecibida = 1;
+        while (tandaRecibida <= 64) {
+            try {
                 boolean CONTINUA_RECIBIENDO = true;
-                try {
-                    while (CONTINUA_RECIBIENDO) {
-                        recibirArchivo(datagramSocket, raf, paquetesRecibidos);
-                    }
-                } catch (Exception ex) {
-                    ex.printStackTrace();
+                while (CONTINUA_RECIBIENDO) {
+                    recibirArchivo(datagramSocket, raf, paquetesRecibidos);
                 }
+                raf.close();
+            } catch (IOException ex) {
+                
             }
-        } while (paquetesRecibidos.size() != numeroPaquetesRecibidos);
+            boolean CONTINUA_PIDIENDO = true;
+            do {
+                byte[] paquetesRecibidosEnviar = convertirArregloBytes(paquetesRecibidos);
+                DatagramPacket acknowledgmentPacket = new DatagramPacket(paquetesRecibidosEnviar, paquetesRecibidosEnviar.length, direccionRemitente, puertoRemitente);
+                datagramSocket.send(acknowledgmentPacket);
+                if (paquetesRecibidos.size() != numeroPaquetesRecibidos) {
+                    boolean CONTINUA_RECIBIENDO = true;
+                    try {
+                        while (CONTINUA_RECIBIENDO) {
+                            recibirArchivo(datagramSocket, raf, paquetesRecibidos);
+                        }
+                    } catch (Exception ex) {
+                        
+                    }
+                }else{
+                    CONTINUA_PIDIENDO = false;
+                }
+            } while (CONTINUA_PIDIENDO);
+            paquetesRecibidos.clear();
+            tandaRecibida++;
+        }
     }
 
     private static void recibirArchivo(DatagramSocket datagramSocket, RandomAccessFile raf, ArrayList<Integer> paquetesRecibidos) throws Exception {
