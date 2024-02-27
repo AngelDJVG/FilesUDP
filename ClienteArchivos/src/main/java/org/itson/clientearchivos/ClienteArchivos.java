@@ -4,24 +4,18 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
-import java.net.Inet4Address;
 import java.net.InetAddress;
-import java.net.SocketException;
-import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Scanner;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 public class ClienteArchivos {
 
-    private static final int TAMANIO_PAQUETE = 1016;
+    private static final int TAMANIO_PAQUETE = 1012;
     private static final int PUERTO = 7;
     private static final int DELAY = 1000;
 
@@ -30,7 +24,8 @@ public class ClienteArchivos {
     private static final String cadenaDirectorioSalida = "C:\\Users\\mario\\3D Objects\\ArchivosRecibidos\\Archivos";
     private static final String cadenaRutaSalida = "ArchivoRecibido.rar";
 
-    private static Integer numeroPaquetesRecibidos = 0;
+    private static Integer numeroPaquetesRealArchivo = 0;
+    private static Integer numeroPaquetesRealTanda = 0; 
 
     private static InetAddress direccionRemitente;
     private static int puertoRemitente = 0;
@@ -61,7 +56,8 @@ public class ClienteArchivos {
 
     private static synchronized void solicitarArchivo(String archivoSolicitado) throws Exception {
         RandomAccessFile raf = new RandomAccessFile(cadenaDirectorioSalida + "\\" + cadenaRutaSalida, "rw");
-        ArrayList<Integer> paquetesRecibidos = new ArrayList<>();
+        ArrayList<Integer> paquetesRecibidosTanda = new ArrayList<>();
+        ArrayList<Integer> paquetesRecibidosTotalArchivo = new ArrayList<>();
         DatagramSocket datagramSocket = new DatagramSocket();
         InetAddress direccionServidor = InetAddress.getByName(DIRECCION_SERVIDOR);
         datagramSocket.setSoTimeout(DELAY);
@@ -79,12 +75,12 @@ public class ClienteArchivos {
             Files.createFile(rutaSalida);
         }
 
-        int tandaRecibida = 1;
-        while (tandaRecibida <= 64) {
+        boolean SEGUIR_RECIBIENDO_TANDAS = true;
+        while (SEGUIR_RECIBIENDO_TANDAS) {
             try {
                 boolean CONTINUA_RECIBIENDO = true;
                 while (CONTINUA_RECIBIENDO) {
-                    recibirArchivo(datagramSocket, raf, paquetesRecibidos);
+                    recibirArchivo(datagramSocket, raf, paquetesRecibidosTanda, paquetesRecibidosTotalArchivo);
                 }
                 raf.close();
             } catch (IOException ex) {
@@ -92,29 +88,32 @@ public class ClienteArchivos {
             }
             boolean CONTINUA_PIDIENDO = true;
             do {
-                byte[] paquetesRecibidosEnviar = convertirArregloBytes(paquetesRecibidos);
+                byte[] paquetesRecibidosEnviar = convertirArregloBytes(paquetesRecibidosTanda);
+                System.out.println("El numero de paquetes recibidos por esa tanda es de "+paquetesRecibidosTanda.size());
                 DatagramPacket acknowledgmentPacket = new DatagramPacket(paquetesRecibidosEnviar, paquetesRecibidosEnviar.length, direccionRemitente, puertoRemitente);
                 datagramSocket.send(acknowledgmentPacket);
-                if (paquetesRecibidos.size() != numeroPaquetesRecibidos) {
+                if (paquetesRecibidosTanda.size() != numeroPaquetesRealTanda) {
                     boolean CONTINUA_RECIBIENDO = true;
                     try {
                         while (CONTINUA_RECIBIENDO) {
-                            recibirArchivo(datagramSocket, raf, paquetesRecibidos);
+                            recibirArchivo(datagramSocket, raf, paquetesRecibidosTanda, paquetesRecibidosTotalArchivo);
                         }
                     } catch (Exception ex) {
-                        
+                        System.out.println("Recibidos: " + paquetesRecibidosTotalArchivo.size() + " - Real: " + numeroPaquetesRealArchivo);
                     }
-                }else{
+                } else {
                     CONTINUA_PIDIENDO = false;
                 }
             } while (CONTINUA_PIDIENDO);
-            paquetesRecibidos.clear();
-            tandaRecibida++;
+            paquetesRecibidosTanda.clear();
+            if (paquetesRecibidosTotalArchivo.size() == numeroPaquetesRealArchivo) {
+                SEGUIR_RECIBIENDO_TANDAS = false;
+            }
         }
     }
 
-    private static void recibirArchivo(DatagramSocket datagramSocket, RandomAccessFile raf, ArrayList<Integer> paquetesRecibidos) throws Exception {
-        byte[] datosRecibidos = new byte[TAMANIO_PAQUETE + Integer.BYTES * 2];
+    private static void recibirArchivo(DatagramSocket datagramSocket, RandomAccessFile raf, ArrayList<Integer> paquetesRecibidosTanda, ArrayList<Integer> paquetesRecibidosTotalArchivo) throws Exception {
+        byte[] datosRecibidos = new byte[TAMANIO_PAQUETE + Integer.BYTES * 3];
 
         DatagramPacket paquete = new DatagramPacket(datosRecibidos, datosRecibidos.length);
         datagramSocket.receive(paquete);
@@ -123,25 +122,26 @@ public class ClienteArchivos {
 
         int tamanioPaquete = paquete.getLength();
 
-        byte[] chunk = new byte[tamanioPaquete - Integer.BYTES * 2];
+        byte[] chunk = new byte[tamanioPaquete - Integer.BYTES * 3];
 
-        System.arraycopy(datosRecibidos, 0, chunk, 0, tamanioPaquete - Integer.BYTES * 2);
+        System.arraycopy(datosRecibidos, 0, chunk, 0, tamanioPaquete - Integer.BYTES * 3);
 
-        byte[] ultimosOchoBytes = Arrays.copyOfRange(datosRecibidos, tamanioPaquete - Integer.BYTES * 2, tamanioPaquete);
+        byte[] ultimosDoceBytes = Arrays.copyOfRange(datosRecibidos, tamanioPaquete - Integer.BYTES * 3, tamanioPaquete);
 
-        int numeroPaquete = ByteBuffer.wrap(ultimosOchoBytes, 0, Integer.BYTES).getInt();
+        int numeroPaquete = ByteBuffer.wrap(ultimosDoceBytes, 0, Integer.BYTES).getInt();
 
-        int totalPaquetes = ByteBuffer.wrap(ultimosOchoBytes, 4, Integer.BYTES).getInt();
+        int totalPaquetes = ByteBuffer.wrap(ultimosDoceBytes, 4, Integer.BYTES).getInt();
+
+        int totalTamanioArchivo = ByteBuffer.wrap(ultimosDoceBytes, 8, Integer.BYTES).getInt();
 
         int offset = numeroPaquete * TAMANIO_PAQUETE;
 
-        //Files.write(rutaSalida, chunk, StandardOpenOption.APPEND);
-        System.out.println("Paquete " + numeroPaquete + " - Offset " + offset + " - Total " + totalPaquetes);
         raf.seek(offset);
         raf.write(chunk);
-        paquetesRecibidos.add(numeroPaquete);
-        numeroPaquetesRecibidos = totalPaquetes;
-        System.out.println("Se ha recibido un chunk del cliente en " + paquete.getAddress().getHostName() + " en el puerto " + paquete.getPort());
+        paquetesRecibidosTanda.add(numeroPaquete);
+        paquetesRecibidosTotalArchivo.add(numeroPaquete);
+        numeroPaquetesRealArchivo = totalTamanioArchivo;
+        numeroPaquetesRealTanda = totalPaquetes;
     }
 
     private static byte[] convertirArregloBytes(ArrayList<Integer> paquetesRecibidos) {
